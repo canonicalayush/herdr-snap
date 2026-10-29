@@ -1,0 +1,27 @@
+#!/bin/sh
+# Capture $SNAP before scrubbing; nothing below may reach pane children.
+herdr_bin="${SNAP}/bin/herdr"
+
+# snapd exports SNAP_COOKIE/SNAP_CONTEXT (snapd auth tokens) and the SNAP_* set
+# into this process. herdr execs the user's shell and agents as children, which
+# would inherit them. herdr is a static binary and reads none of these.
+unset SNAP SNAP_APP_NAME SNAP_ARCH SNAP_COMMON SNAP_CONTEXT SNAP_COOKIE \
+      SNAP_DATA SNAP_EUID SNAP_INSTANCE_KEY SNAP_INSTANCE_NAME \
+      SNAP_LIBRARY_PATH SNAP_NAME SNAP_REAL_HOME SNAP_REEXEC SNAP_REVISION \
+      SNAP_UID SNAP_USER_COMMON SNAP_USER_DATA SNAP_VERSION
+
+# Upstream picks its update path from the path of its own executable
+# (src/update.rs is_homebrew/mise/nix_managed_exe_path). There is no snap
+# branch, so `herdr update` would try to overwrite the read-only /snap tree.
+if [ "$1" = "update" ]; then
+    echo "herdr is installed as a snap; self-update is disabled." >&2
+    echo "Run: sudo snap refresh herdr" >&2
+    exit 1
+fi
+if [ "$1" = "channel" ] && [ "$2" = "set" ]; then
+    echo "herdr is installed as a snap; update channels are snap channels." >&2
+    echo "Run: sudo snap refresh herdr" >&2
+    exit 1
+fi
+
+exec "$herdr_bin" "$@"

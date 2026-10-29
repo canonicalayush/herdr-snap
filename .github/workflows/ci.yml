@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+      - name: Pack
+        run: |
+          sudo snapcraft pack --destructive-mode --build-for ${{ matrix.arch }}
+          sudo chown "$(id -u):$(id -g)" herdr_*.snap
+      - name: Version matches the pin
+        run: |
+          set -eu
+          pinned=$(python3 -c "import json;print(json.load(open('snap/local/upstream.json'))['version'])")
+          test -f "herdr_${pinned}_${{ matrix.arch }}.snap"
+      - name: Store review tooling
+        run: |
+          sudo snap install review-tools
+          review-tools.snap-review --allow-classic herdr_*_${{ matrix.arch }}.snap
+      - uses: actions/upload-artifact@v4
+        with:
+          name: herdr-${{ matrix.arch }}
+          path: herdr_*_${{ matrix.arch }}.snap
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: herdr-amd64
+      - name: Install the snap
+        run: sudo snap install --classic --dangerous herdr_*_amd64.snap
+      - name: Install tmux and jq
+        run: sudo apt-get update && sudo apt-get install -y tmux jq
+      - name: Seed a user-path binary
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          printf '#!/bin/sh\necho fake-agent-ok\n' > "$HOME/.local/bin/fake-agent"
+          chmod +x "$HOME/.local/bin/fake-agent"
+      - name: Self-update is refused and the binary is untouched
+        run: |
+          set -eu
+          before=$(sha256sum /snap/herdr/current/bin/herdr | cut -d' ' -f1)
+          ! herdr update
+          herdr update 2>&1 | grep -q 'sudo snap refresh herdr'
+          ! herdr channel set preview
+          after=$(sha256sum /snap/herdr/current/bin/herdr | cut -d' ' -f1)
+          test "$before" = "$after"
+      - name: Completion is installed and sourceable
+        run: bash -c '. /snap/herdr/current/share/bash-completion/completions/herdr'
+      - name: Pane environment is scrubbed and host PATH works
+        run: ./scripts/ci-pane-check.sh
