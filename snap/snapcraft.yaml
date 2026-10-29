@@ -1,0 +1,76 @@
+name: herdr
+title: Herdr (unofficial)
+base: core24
+adopt-info: herdr
+summary: The runtime your coding agents live on
+description: |
+  Herdr is a terminal multiplexer built for coding agents. It keeps terminals
+  running in a background server when you close the client or lose your SSH
+  connection, marks every pane working, blocked or idle, and gathers local
+  work and saved SSH machines into one window.
+
+  Unofficial community packaging. This snap repacks the official upstream
+  release binary for each architecture, verified against the sha256 published
+  at https://herdr.dev/latest.json. It is not endorsed by the Herdr project.
+
+  Because herdr runs the agents, shells, editors and git/ssh binaries you
+  already have installed, and opens repositories anywhere on your disk, it
+  uses classic confinement and is not sandboxed.
+license: Apache-2.0
+website: https://herdr.dev
+source-code: https://github.com/herdrdev/herdr
+issues: https://github.com/herdrdev/herdr/issues
+contact: https://github.com/canonicalayush/herdr-snap/issues
+grade: stable
+confinement: classic
+
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
+  arm64:
+    build-on: [arm64]
+    build-for: [arm64]
+
+lint:
+  ignore:
+    # Upstream ships a static-pie musl binary: no ELF interpreter and no RPATH,
+    # so the classic and library linters have nothing valid to report.
+    - classic
+    - library
+
+apps:
+  herdr:
+    command: bin/herdr-launch
+    completer: share/bash-completion/completions/herdr
+
+parts:
+  herdr:
+    plugin: nil
+    build-packages:
+      - ca-certificates
+      - curl
+    override-pull: |
+      set -eu
+      mkdir -p "${CRAFT_PART_SRC}"
+      cd "${CRAFT_PART_SRC}"
+      pin="${CRAFT_PROJECT_DIR}/snap/local/upstream.json"
+      version=$(python3 -c "import json;print(json.load(open('${pin}'))['version'])")
+      sha=$(python3 -c "import json;print(json.load(open('${pin}'))['sha256']['${CRAFT_ARCH_BUILD_FOR}'])")
+      case "${CRAFT_ARCH_BUILD_FOR}" in
+        amd64) asset=herdr-linux-x86_64 ;;
+        arm64) asset=herdr-linux-aarch64 ;;
+        *) echo "unsupported architecture: ${CRAFT_ARCH_BUILD_FOR}" >&2; exit 1 ;;
+      esac
+      curl --fail --location --retry 3 --output herdr \
+        "https://github.com/herdrdev/herdr/releases/download/v${version}/${asset}"
+      printf '%s  herdr\n' "${sha}" | sha256sum --check --strict -
+      craftctl set version="${version}"
+    override-build: |
+      set -eu
+      install -D -m 0755 "${CRAFT_PART_SRC}/herdr" "${CRAFT_PART_INSTALL}/bin/herdr"
+      install -D -m 0755 "${CRAFT_PROJECT_DIR}/snap/local/herdr-launch" \
+        "${CRAFT_PART_INSTALL}/bin/herdr-launch"
+      mkdir -p "${CRAFT_PART_INSTALL}/share/bash-completion/completions"
+      "${CRAFT_PART_INSTALL}/bin/herdr" completion bash \
+        > "${CRAFT_PART_INSTALL}/share/bash-completion/completions/herdr"
