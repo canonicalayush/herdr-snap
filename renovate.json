@@ -1,0 +1,18 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "dependencyDashboard": true,
+  "schedule": ["* 0-3 1,15 * *"],
+  "prConcurrentLimit": 1,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^snap/local/upstream\\.json$/"],
+      "matchStrings": ["\"version\"\\s*:\\s*\"(?<currentValue>[^\"]+)\""],
+      "depNameTemplate": "herdrdev/herdr",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
+    }
+  ]
+}

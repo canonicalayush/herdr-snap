@@ -1,0 +1,26 @@
+name: Renovate checksum sync
+
+on:
+  push:
+    branches: ['renovate/**']
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref_name }}
+          ssh-key: ${{ secrets.RENOVATE_SYNC_DEPLOY_KEY }}
+      - run: python3 scripts/sync-checksums.py
+      - name: Commit if changed
+        run: |
+          set -eu
+          git diff --quiet && exit 0
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: recompute upstream sha256"
+          git push
